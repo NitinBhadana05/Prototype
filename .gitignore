@@ -1,0 +1,71 @@
+# ========================
+# Node.js / Frontend (Next.js)
+# ========================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.pnp
+frontend/.pnp.js
+frontend/.yarn/install-state.gz
+frontend/coverage/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.vercel
+frontend/*.tsbuildinfo
+
+# ========================
+# Ruby on Rails / Backend
+# ========================
+backend/log/*.log
+backend/tmp/
+backend/storage/
+backend/db/*.sqlite3
+backend/db/*.sqlite3-journal
+backend/db/*.sqlite3-shm
+backend/db/*.sqlite3-wal
+backend/public/assets/
+backend/public/packs/
+backend/public/packs-test/
+backend/vendor/bundle/
+
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env*.local
+backend/config/master.key
+backend/config/credentials.yml.enc
+
+# ========================
+# IDE & Editor
+# ========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# OS Generated
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# ========================
+# Misc
+# ========================
+*.pem
+.byebug_history

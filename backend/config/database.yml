@@ -1,0 +1,16 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: ephy_hubspot_prototype_dev
+
+test:
+  <<: *default
+  database: ephy_hubspot_prototype_test
+
+production:
+  <<: *default
+  database: ephy_hubspot_prototype_prod
