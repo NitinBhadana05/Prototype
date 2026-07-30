@@ -1,5 +1,5 @@
 class Api::V1::HubspotController < Api::V1::BaseController
-  before_action :logged_in?, except: [:callback]
+  skip_before_action :authenticate_request!, only: [:callback]
   before_action :load_company, except: [:callback]
 
   # GET /api/v1/hubspot/auth_url
@@ -174,7 +174,7 @@ class Api::V1::HubspotController < Api::V1::BaseController
   private
 
   def load_company
-    @company = CompanyInfo.find_by(id: @user&.company_info_id)
+    @company = CompanyInfo.find_by(id: @current_company_info_id)
     render json: { error: "Company not found" }, status: :not_found unless @company
   end
 end

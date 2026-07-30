@@ -69,3 +69,6 @@ ehthumbs.db
 # ========================
 *.pem
 .byebug_history
+
+# HubSpot config file
+hubspot.config.yml

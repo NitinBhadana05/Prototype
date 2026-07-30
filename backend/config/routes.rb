@@ -1,4 +1,7 @@
 Rails.application.routes.draw do
+  post '/auth/login',    to: 'auth#login'
+  post '/auth/register', to: 'auth#register'
+
   # HubSpot OAuth callback (no auth — redirected from HubSpot)
   get  '/api/v1/hubspot/callback',  to: 'api/v1/hubspot#callback'
   # HubSpot app-level webhook (no auth — verified by HMAC signature)
