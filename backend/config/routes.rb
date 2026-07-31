@@ -20,6 +20,7 @@ Rails.application.routes.draw do
         get    :deal_field_mapping
         patch  :save_deal_field_mapping
         post   :sync
+        get    :deals
       end
     end
   end

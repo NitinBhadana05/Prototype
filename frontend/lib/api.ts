@@ -44,3 +44,7 @@ export const saveHubspotDealFieldMapping = (mapping: Record<string, string>) =>
 
 export const syncHubspotDeals = () =>
   fetch(`${API_BASE}/api/v1/hubspot/sync`, { method: "POST", headers: getAuthHeaders() });
+
+export const fetchHubspotDeals = () =>
+  fetch(`${API_BASE}/api/v1/hubspot/deals`, { headers: getAuthHeaders() });
+

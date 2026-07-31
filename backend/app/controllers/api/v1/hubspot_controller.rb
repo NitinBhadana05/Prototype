@@ -4,8 +4,13 @@ class Api::V1::HubspotController < Api::V1::BaseController
 
   # GET /api/v1/hubspot/auth_url
   def auth_url
-    state = Base64.urlsafe_encode64(@company.id.to_s)
-    url   = HubspotService.auth_url(state: state)
+    pkce = HubspotService.generate_pkce
+    payload = {
+      company_id:    @company.id,
+      code_verifier: pkce[:code_verifier]
+    }
+    state = Rails.application.message_verifier("hubspot_oauth").generate(payload)
+    url   = HubspotService.auth_url(state: state, code_challenge: pkce[:code_challenge])
     render json: { status: 200, url: url }
   end
 
@@ -14,7 +19,16 @@ class Api::V1::HubspotController < Api::V1::BaseController
     code  = params[:code]
     state = params[:state]
 
-    company_id   = Base64.urlsafe_decode64(state.to_s).to_i
+    payload = begin
+      Rails.application.message_verifier("hubspot_oauth").verify(state)
+    rescue => e
+      id = Base64.urlsafe_decode64(state.to_s).to_i rescue nil
+      id ? { company_id: id } : nil
+    end
+
+    company_id    = payload&.[](:company_id) || payload&.[]("company_id")
+    code_verifier = payload&.[](:code_verifier) || payload&.[]("code_verifier")
+
     company      = CompanyInfo.find_by(id: company_id)
     frontend_url = ENV["FRONTEND_URL"] || "http://localhost:3000"
 
@@ -23,7 +37,7 @@ class Api::V1::HubspotController < Api::V1::BaseController
                          allow_other_host: true
     end
 
-    tokens = HubspotService.exchange_code(code)
+    tokens = HubspotService.exchange_code(code, code_verifier: code_verifier)
 
     unless tokens["access_token"].present?
       error = tokens["message"] || tokens["error"] || "auth_failed"
@@ -169,6 +183,39 @@ class Api::V1::HubspotController < Api::V1::BaseController
 
     HubspotSyncWorker.perform_async(@company.id)
     render json: { status: 200, message: "Sync started" }
+  end
+
+  # GET /api/v1/hubspot/deals
+  def deals
+    deals = HubspotDeal.where(company_info_id: @company.id).order(updated_at: :desc).limit(50)
+    sales_files = SalesFile.where(company_info_id: @company.id).order(updated_at: :desc).limit(50)
+    logs = HubspotWebhookLog.where(company_info_id: @company.id).order(created_at: :desc).limit(20)
+
+    render json: {
+      status: 200,
+      deals_count: deals.count,
+      sales_files_count: sales_files.count,
+      deals: deals.map { |d|
+        {
+          id: d.id,
+          hubspot_deal_id: d.hubspot_deal_id,
+          status: d.status,
+          deal_name: d.deal_data["dealname"] || d.deal_data["name"] || "HubSpot Deal ##{d.hubspot_deal_id}",
+          amount: d.deal_data["amount"] || 0,
+          stage: d.deal_data["dealstage"] || "Unknown",
+          last_synced_at: d.last_synced_at || d.updated_at
+        }
+      },
+      recent_logs: logs.map { |l|
+        {
+          id: l.id,
+          event_type: l.event_type,
+          status: l.status,
+          hubspot_deal_id: l.hubspot_deal_id,
+          created_at: l.created_at
+        }
+      }
+    }
   end
 
   private

@@ -46,22 +46,36 @@ class HubspotService
   def self.client_secret = ENV["HUBSPOT_CLIENT_SECRET"]
   def self.redirect_uri  = ENV["HUBSPOT_REDIRECT_URI"]
 
-  def self.auth_url(state:)
+  def self.generate_pkce
+    code_verifier  = SecureRandom.urlsafe_base64(32)
+    digest         = Digest::SHA256.digest(code_verifier)
+    code_challenge = Base64.urlsafe_encode64(digest, padding: false)
+    { code_verifier: code_verifier, code_challenge: code_challenge }
+  end
+
+  def self.auth_url(state:, code_challenge: nil)
     params = {
-      client_id:     client_id,
-      redirect_uri:  redirect_uri,
-      scope:         SCOPES,
-      state:         state
+      client_id:    client_id,
+      redirect_uri: redirect_uri,
+      scope:        SCOPES,
+      state:        state
     }
+    if code_challenge.present?
+      params[:code_challenge]        = code_challenge
+      params[:code_challenge_method] = "S256"
+    end
     "#{AUTH_URL}?#{URI.encode_www_form(params)}"
   end
 
-  def self.exchange_code(code)
-    post_token(
+  def self.exchange_code(code, code_verifier: nil)
+    extra_params = {
       grant_type:   "authorization_code",
       code:         code,
       redirect_uri: redirect_uri
-    )
+    }
+    extra_params[:code_verifier] = code_verifier if code_verifier.present?
+
+    post_token(extra_params)
   end
 
   def self.refresh(refresh_token_value)

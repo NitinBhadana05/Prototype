@@ -10,6 +10,7 @@ gem "devise"
 gem "rack-cors"
 gem "dotenv-rails", groups: [:development, :test]
 gem "sidekiq", "~> 7.0"
+gem "connection_pool", "< 3.0"
 gem "redis", "~> 5.0"
 
 gem "tzinfo-data", platforms: %i[ windows jruby ]

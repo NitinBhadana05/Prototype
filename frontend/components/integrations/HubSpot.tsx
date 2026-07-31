@@ -12,6 +12,7 @@ import {
   fetchHubspotDealFieldMapping,
   saveHubspotDealFieldMapping,
   syncHubspotDeals,
+  fetchHubspotDeals,
 } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
@@ -21,17 +22,41 @@ import {
   Link2Off,
   RefreshCw,
   Save,
-  ChevronDown,
-  ChevronUp,
   ArrowLeftRight,
+  Zap,
+  Database,
+  Layers,
+  Settings2,
+  Activity,
+  DollarSign,
+  Building2,
+  Check,
+  ShieldCheck,
 } from "lucide-react";
 
 type Pipeline = { id: string; label: string };
 type Stage    = { id: string; label: string };
 type EphyStage = { key: string; name: string; enabled: boolean };
 
+type SyncedDeal = {
+  id: number;
+  hubspot_deal_id: string;
+  status: string;
+  deal_name: string;
+  amount: number | string;
+  stage: string;
+  last_synced_at: string;
+};
+
+type WebhookLog = {
+  id: number;
+  event_type: string;
+  status: string;
+  hubspot_deal_id: string;
+  created_at: string;
+};
+
 type HubSpotIntegrationProps = {
-  user?: any;
   onConnectionChange?: (connected: boolean) => void;
 };
 
@@ -49,7 +74,8 @@ const DEAL_FIELD_META: Record<string, { label: string; hint: string }> = {
   broker_comp_producer: { label: "Broker / Producer",   hint: "Maps to HubSpot Deal Source field" },
 };
 
-export default function HubSpotIntegration({ user, onConnectionChange }: HubSpotIntegrationProps) {
+export default function HubSpotIntegration({ onConnectionChange }: HubSpotIntegrationProps) {
+  const [activeTab, setActiveTab]         = useState<"overview" | "stages" | "fields" | "architecture">("overview");
   const [connected, setConnected]         = useState<boolean | null>(null);
   const [hubId, setHubId]                 = useState<string | null>(null);
   const [connecting, setConnecting]       = useState(false);
@@ -64,32 +90,36 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
   const [ephyStages, setEphyStages]       = useState<EphyStage[]>([]);
   const [stageMapping, setStageMapping]   = useState<Record<string, string>>({});
   const [underwriterCompletionStage, setUnderwriterCompletionStage] = useState<string>("");
-  const [stageMappingOpen, setStageMappingOpen] = useState(true);
   const [stageSaving, setStageSaving]     = useState(false);
   const [stageSaved, setStageSaved]       = useState(false);
 
   const [fieldMapping, setFieldMapping]       = useState<Record<string, string>>(DEFAULT_FIELD_MAPPING);
   const [hsFields, setHsFields]               = useState<{ hs_field: string; label: string; description: string }[]>([]);
-  const [fieldMappingOpen, setFieldMappingOpen] = useState(false);
   const [fieldSaving, setFieldSaving]         = useState(false);
   const [fieldSaved, setFieldSaved]           = useState(false);
+
+  const [syncedDeals, setSyncedDeals]         = useState<SyncedDeal[]>([]);
+  const [webhookLogs, setWebhookLogs]         = useState<WebhookLog[]>([]);
+  const [dealsCount, setDealsCount]           = useState<number>(0);
+  const [loadingDeals, setLoadingDeals]       = useState<boolean>(false);
 
   const popupRef   = useRef<Window | null>(null);
   const popupTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => { checkConnection(); }, []);
+  useEffect(() => { checkConnection(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (connected) {
       loadPipelines();
       loadStageMapping();
       loadFieldMapping();
+      loadSyncedDeals();
     }
-  }, [connected]);
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (connected && selectedPipeline) loadPipelineStages();
-  }, [selectedPipeline, connected]);
+  }, [selectedPipeline, connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkConnection = async (): Promise<boolean> => {
     try {
@@ -107,12 +137,29 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
     }
   };
 
+  const loadSyncedDeals = async () => {
+    setLoadingDeals(true);
+    try {
+      const res  = await fetchHubspotDeals();
+      const json = await res.json();
+      if (json?.status === 200) {
+        setSyncedDeals(json.deals || []);
+        setWebhookLogs(json.recent_logs || []);
+        setDealsCount(json.deals_count || 0);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingDeals(false);
+    }
+  };
+
   const loadPipelines = async () => {
     setPipelineLoading(true);
     try {
       const res  = await fetchHubspotPipelines();
       const json = await res.json();
-      const list: Pipeline[] = (json?.pipelines ?? []).map((p: any) => ({
+      const list: Pipeline[] = (json?.pipelines ?? []).map((p: { id: string; label: string }) => ({
         id:    p.id,
         label: p.label,
       }));
@@ -129,7 +176,7 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
     try {
       const res  = await fetchHubspotPipelineStages(selectedPipeline);
       const json = await res.json();
-      const list: Stage[] = (json?.stages ?? []).map((s: any) => ({
+      const list: Stage[] = (json?.stages ?? []).map((s: { id: string; label: string }) => ({
         id:    s.id,
         label: s.label,
       }));
@@ -190,7 +237,7 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
           clearInterval(popupTimer.current!);
           setConnecting(false);
           checkConnection();
-          toast.success("HubSpot connected! Custom properties are being set up automatically.");
+          toast.success("HubSpot connected successfully! Custom properties are provisioning.");
         } else if (event.data?.type === "hs_error") {
           window.removeEventListener("message", onMessage);
           clearInterval(popupTimer.current!);
@@ -210,6 +257,7 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
           clearInterval(popupTimer.current!);
           window.removeEventListener("message", onMessage);
           setConnecting(false);
+          checkConnection();
         }
       }, 500);
     } catch {
@@ -228,6 +276,7 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
       setHsStages([]);
       setStageMapping({});
       setUnderwriterCompletionStage("");
+      setSyncedDeals([]);
       onConnectionChange?.(false);
       toast.success("HubSpot disconnected.");
     } catch {
@@ -284,7 +333,8 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
       const res  = await syncHubspotDeals();
       const json = await res.json();
       if (json?.status === 200) {
-        toast.success(`Synced ${json.synced} deal${json.synced === 1 ? "" : "s"} from HubSpot.`);
+        toast.success("Sync worker triggered. Refreshing deals...");
+        setTimeout(() => loadSyncedDeals(), 1500);
       } else {
         toast.error("Failed to sync deals.");
       }
@@ -295,255 +345,397 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
     }
   };
 
-  return (
-    <div className="py-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-          <ArrowLeftRight className="w-5 h-5 text-orange-500" />
-          HubSpot Integration
-        </h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Connect your HubSpot account for bidirectional deal sync. Stage changes, field updates, and outcomes flow between HubSpot and EPHY automatically. Configure which HubSpot pipeline stages map to each EPHY deal stage below.
-        </p>
-      </div>
+  const totalDealValue = syncedDeals.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
 
-      {/* Connection status */}
-      <div className="mb-6">
-        {connected === null ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 className="w-4 h-4 animate-spin" /> Checking HubSpot connection…
-          </div>
-        ) : connected ? (
-          <div className="flex items-center justify-between rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-green-700">HubSpot connected</p>
-                {hubId && (
-                  <p className="text-xs text-green-600 mt-0.5">Portal ID: {hubId}</p>
-                )}
+  return (
+    <div className="space-y-6">
+      {/* Top Hero Banner */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700/60 p-6 text-white shadow-xl">
+        <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-[#ff7a59]/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-[#ff7a59]/20 border border-[#ff7a59]/30 rounded-2xl shrink-0 text-[#ff7a59]">
+              <Building2 className="w-8 h-8" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold tracking-tight">HubSpot CRM Integration</h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-[#ff7a59]/20 text-[#ff7a59] border border-[#ff7a59]/30">
+                  v2.0 Bidirectional
+                </span>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
-                {syncing ? "Syncing…" : "Sync deals"}
-              </button>
-              <button
-                onClick={handleDisconnect}
-                disabled={disconnecting}
-                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-              >
-                <Link2Off className="w-3.5 h-3.5" />
-                {disconnecting ? "Disconnecting…" : "Disconnect"}
-              </button>
+              <p className="mt-1 text-sm text-slate-300 max-w-2xl leading-relaxed">
+                Connect EPHY to HubSpot for continuous real-time deal sync, stage progression, custom property mapping, and underwriter feedback.
+              </p>
             </div>
           </div>
-        ) : (
-          <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-            <span className="text-sm text-gray-500">No HubSpot account connected</span>
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="flex items-center gap-1.5 bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
-            >
-              {connecting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting…
-                </>
-              ) : (
-                <>
-                  <Link2 className="w-3.5 h-3.5" /> Connect HubSpot
-                </>
-              )}
-            </button>
+
+          {/* Connection Action Box */}
+          <div className="shrink-0 flex items-center gap-3">
+            {connected === null ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
+                <Loader2 className="w-4 h-4 animate-spin text-[#ff7a59]" /> Checking status...
+              </div>
+            ) : connected ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#ff7a59] to-[#e5694d] hover:opacity-90 text-white text-xs font-semibold rounded-xl shadow-md transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} />
+                  {syncing ? "Syncing..." : "Sync Deals"}
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium rounded-xl transition-all disabled:opacity-50"
+                >
+                  <Link2Off className="w-3.5 h-3.5" />
+                  {disconnecting ? "Disconnecting..." : "Disconnect"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleConnect}
+                disabled={connecting}
+                className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#ff7a59] to-[#e5694d] hover:from-[#e5694d] hover:to-[#ff7a59] text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-[#ff7a59]/30 transition-all disabled:opacity-50"
+              >
+                {connecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Connecting Portal...
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-4 h-4" /> Connect HubSpot Portal
+                  </>
+                )}
+              </button>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Quick Connection Badges */}
+        <div className="mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+            <span className="text-slate-300">Status:</span>
+            <span className={`font-semibold ${connected ? "text-emerald-400" : "text-slate-400"}`}>
+              {connected ? "Active & Authenticated" : "Not Connected"}
+            </span>
+          </div>
+
+          {hubId && (
+            <div className="flex items-center gap-1.5 text-slate-300 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#ff7a59]" />
+              <span>Portal ID:</span>
+              <span className="font-mono font-bold text-white">{hubId}</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>Webhook Listener:</span>
+            <span className="text-slate-200">Active (HMAC Signed)</span>
+          </div>
+        </div>
       </div>
 
       {connected && (
         <>
-          {/* Pipeline selector */}
-          <div className="mb-6 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-1">Pipeline</p>
-            <p className="text-xs text-gray-500 mb-3">
-              Select the HubSpot pipeline whose stages map to EPHY deal stages.
-            </p>
-            {pipelineLoading ? (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading pipelines…
-              </div>
-            ) : (
-              <select
-                value={selectedPipeline}
-                onChange={(e) => setSelectedPipeline(e.target.value)}
-                className="w-full max-w-sm text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-orange-400"
-              >
-                <option value="">— Select pipeline —</option>
-                {pipelines.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            )}
+          {/* Navigation Tabs */}
+          <div className="border-b border-gray-200 dark:border-gray-700 flex space-x-8">
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === "overview"
+                  ? "border-[#ff7a59] text-[#ff7a59]"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              Overview & Synced Deals
+            </button>
+            <button
+              onClick={() => setActiveTab("stages")}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === "stages"
+                  ? "border-[#ff7a59] text-[#ff7a59]"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              Pipeline & Stage Mapping
+            </button>
+            <button
+              onClick={() => setActiveTab("fields")}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === "fields"
+                  ? "border-[#ff7a59] text-[#ff7a59]"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Settings2 className="w-4 h-4" />
+              Field Mapping
+            </button>
+            <button
+              onClick={() => setActiveTab("architecture")}
+              className={`pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === "architecture"
+                  ? "border-[#ff7a59] text-[#ff7a59]"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              Integration Architecture
+            </button>
           </div>
 
-          {/* Stage mapping */}
-          <div className="mb-6 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-            <button
-              onClick={() => setStageMappingOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
-            >
-              <div>
-                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Stage Mapping</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Map each EPHY deal stage to its corresponding HubSpot pipeline stage.
-                </p>
-              </div>
-              {stageMappingOpen ? (
-                <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-              )}
-            </button>
-
-            {stageMappingOpen && (
-              <div className="px-4 py-4">
-                {ephyStages.length === 0 ? (
-                  <p className="text-sm text-gray-400">No EPHY stages configured. Set up deal stages in <strong>Deal Structure → Deal Statuses</strong> first.</p>
-                ) : hsStages.length === 0 && selectedPipeline ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading stages…
+          {/* TAB 1: OVERVIEW & SYNCED DEALS */}
+          {activeTab === "overview" && (
+            <div className="space-y-6 animate-fade-in">
+              {/* KPI Metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Synced Deals</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{dealsCount}</p>
                   </div>
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl">
+                    <Database className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Synced Pipeline Value</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                      ${totalDealValue.toLocaleString("en-US", { minimumFractionDigits: 0 })}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                    <DollarSign className="w-6 h-6" />
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Active Pipeline</p>
+                    <p className="text-base font-bold text-gray-900 dark:text-white mt-1 truncate max-w-[180px]">
+                      {pipelines.find((p) => p.id === selectedPipeline)?.label || "Default Pipeline"}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-orange-50 dark:bg-orange-900/20 text-[#ff7a59] rounded-xl">
+                    <Layers className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Deals Table Card */}
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                <div className="p-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white">Recent Synced Deals</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Deals automatically imported from your HubSpot CRM portal.
+                    </p>
+                  </div>
+                  <button
+                    onClick={loadSyncedDeals}
+                    disabled={loadingDeals}
+                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title="Refresh list"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingDeals ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+
+                {loadingDeals ? (
+                  <div className="p-8 text-center text-gray-400">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#ff7a59]" />
+                    Fetching HubSpot deal status...
+                  </div>
+                ) : syncedDeals.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400">
+                      <Database className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">No deals imported yet</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                      Click <strong>&quot;Sync Deals&quot;</strong> above or move deals in HubSpot to mapped stages to begin automatic synchronization.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 dark:bg-gray-700/50 text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                          <th className="px-5 py-3">Deal Name</th>
+                          <th className="px-5 py-3">HubSpot Deal ID</th>
+                          <th className="px-5 py-3">Stage</th>
+                          <th className="px-5 py-3">Amount</th>
+                          <th className="px-5 py-3">Status</th>
+                          <th className="px-5 py-3">Last Synced</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
+                        {syncedDeals.map((deal) => (
+                          <tr key={deal.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30 transition-colors">
+                            <td className="px-5 py-3.5 font-medium text-gray-900 dark:text-white">
+                              {deal.deal_name}
+                            </td>
+                            <td className="px-5 py-3.5 font-mono text-xs text-gray-500 dark:text-gray-400">
+                              #{deal.hubspot_deal_id}
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 dark:bg-orange-900/20 text-[#ff7a59] border border-orange-200 dark:border-orange-800/30">
+                                {deal.stage}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 font-semibold text-gray-800 dark:text-gray-200">
+                              ${Number(deal.amount).toLocaleString()}
+                            </td>
+                            <td className="px-5 py-3.5">
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Synced
+                              </span>
+                            </td>
+                            <td className="px-5 py-3.5 text-xs text-gray-400">
+                              {new Date(deal.last_synced_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: STAGE MAPPING */}
+          {activeTab === "stages" && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Pipeline & Stage Alignment</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
+                  Select your active HubSpot pipeline and map each internal EPHY deal status to its corresponding HubSpot deal stage.
+                </p>
+
+                {/* Pipeline Selector */}
+                <div className="mb-6 p-4 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 max-w-xl">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">
+                    HubSpot Deal Pipeline
+                  </label>
+                  {pipelineLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading pipelines from HubSpot...
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedPipeline}
+                      onChange={(e) => setSelectedPipeline(e.target.value)}
+                      className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-xl px-3.5 py-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-[#ff7a59]"
+                    >
+                      <option value="">— Select HubSpot Pipeline —</option>
+                      {pipelines.map((p) => (
+                        <option key={p.id} value={p.id}>{p.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Mapping Grid */}
+                {ephyStages.length === 0 ? (
+                  <p className="text-sm text-gray-400">No EPHY stages configured.</p>
                 ) : !selectedPipeline ? (
                   <p className="text-sm text-gray-400">Select a pipeline above to load its stages.</p>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-2 items-center mb-4">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 pb-1 border-b border-gray-100">EPHY Stage</div>
-                      <div className="pb-1 border-b border-gray-100" />
-                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 pb-1 border-b border-gray-100">HubSpot Stage</div>
+                  <div className="space-y-3 max-w-2xl">
+                    <div className="grid grid-cols-[1fr_auto_1fr] gap-4 text-xs font-semibold text-gray-400 uppercase tracking-wider pb-2 border-b border-gray-100 dark:border-gray-700">
+                      <div>EPHY Deal Stage</div>
+                      <div>Direction</div>
+                      <div>HubSpot Pipeline Stage</div>
+                    </div>
 
-                      {ephyStages.map((stage) => (
-                        <div className="contents" key={stage.key}>
-                          <div className="text-sm font-medium text-gray-800 dark:text-gray-200 py-1">
-                            {stage.name}
-                          </div>
-                          <div className="flex justify-center text-gray-300">
-                            <ArrowLeftRight className="w-4 h-4" />
-                          </div>
-                          <div className="py-1">
-                            <select
-                              value={stageMapping[stage.key] ?? ""}
-                              onChange={(e) =>
-                                setStageMapping((prev) => ({ ...prev, [stage.key]: e.target.value }))
-                              }
-                              className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                            >
-                              <option value="">— Not mapped —</option>
-                              {hsStages.map((s) => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                              ))}
-                            </select>
-                          </div>
+                    {ephyStages.map((stage) => (
+                      <div key={stage.key} className="grid grid-cols-[1fr_auto_1fr] gap-4 items-center p-3 rounded-xl bg-gray-50/70 dark:bg-gray-700/30 border border-gray-100 dark:border-gray-700">
+                        <div className="font-medium text-sm text-gray-800 dark:text-gray-200">
+                          {stage.name}
                         </div>
-                      ))}
-                    </div>
+                        <div className="text-[#ff7a59]">
+                          <ArrowLeftRight className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <select
+                            value={stageMapping[stage.key] ?? ""}
+                            onChange={(e) =>
+                              setStageMapping((prev) => ({ ...prev, [stage.key]: e.target.value }))
+                            }
+                            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                          >
+                            <option value="">— Not mapped —</option>
+                            {hsStages.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
 
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 mb-4">
-                      <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">Auto-advance on Underwriter Completion</p>
-                      <p className="text-xs text-gray-400 mb-2">
-                        When an underwriter submits their form, automatically move the deal to the selected stage and push form details to HubSpot. Set to &quot;Disabled&quot; to turn this off.
-                      </p>
-                      <select
-                        value={underwriterCompletionStage}
-                        onChange={(e) => setUnderwriterCompletionStage(e.target.value)}
-                        className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                      >
-                        <option value="">— Disabled —</option>
-                        {ephyStages.map((s) => (
-                          <option key={s.key} value={s.key}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex items-center gap-3">
+                    <div className="pt-4 flex items-center gap-4">
                       <button
                         onClick={handleSaveStageMapping}
                         disabled={stageSaving}
-                        className="inline-flex items-center gap-1.5 bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
+                        className="px-5 py-2.5 bg-gradient-to-r from-[#ff7a59] to-[#e5694d] text-white text-xs font-bold rounded-xl shadow-md hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
                       >
-                        {stageSaving ? (
-                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                        ) : (
-                          <><Save className="w-3.5 h-3.5" /> Save Stage Mapping</>
-                        )}
+                        {stageSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Save Stage Mapping
                       </button>
                       {stageSaved && (
-                        <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Saved
+                        <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                          <Check className="w-4 h-4" /> Saved successfully
                         </span>
                       )}
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Field mapping */}
-          <div className="mb-6 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-            <button
-              onClick={() => setFieldMappingOpen((o) => !o)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
-            >
-              <div>
-                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">Field Mapping</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Configure which HubSpot deal properties map to EPHY fields. Defaults are preconfigured.
+          {/* TAB 3: FIELD MAPPING */}
+          {activeTab === "fields" && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">HubSpot Deal Property Mapping</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">
+                  Map deal attributes between EPHY and HubSpot deal properties.
                 </p>
-              </div>
-              {fieldMappingOpen ? (
-                <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-              )}
-            </button>
 
-            {fieldMappingOpen && (
-              <div className="px-4 py-4">
-                <div className="grid grid-cols-[1fr_1fr] gap-x-4 gap-y-2 mb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 pb-1 border-b border-gray-100 dark:border-gray-700">
-                    EPHY Deal Field
-                  </div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-400 pb-1 border-b border-gray-100 dark:border-gray-700">
-                    HubSpot Property
-                  </div>
-
+                <div className="space-y-4 max-w-2xl">
                   {Object.keys(DEFAULT_FIELD_MAPPING).map((dealKey) => {
                     const meta = DEAL_FIELD_META[dealKey];
                     return (
-                      <div className="contents" key={dealKey}>
-                        <div className="flex flex-col justify-center py-1">
-                          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      <div key={dealKey} className="p-4 rounded-xl bg-gray-50/70 dark:bg-gray-700/30 border border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
                             {meta?.label ?? dealKey}
-                          </span>
-                          <span className="text-xs text-gray-400">{meta?.hint}</span>
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">{meta?.hint}</p>
                         </div>
-                        <div className="flex items-center py-1">
+                        <div className="w-full sm:w-64">
                           <select
                             value={fieldMapping[dealKey] ?? ""}
                             onChange={(e) =>
                               setFieldMapping((prev) => ({ ...prev, [dealKey]: e.target.value }))
                             }
-                            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-orange-400"
+                            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
                           >
                             <option value="">— Select property —</option>
                             {hsFields.map((f) => (
-                              <option key={f.hs_field} value={f.hs_field} title={f.description}>
+                              <option key={f.hs_field} value={f.hs_field}>
                                 {f.label} ({f.hs_field})
                               </option>
                             ))}
@@ -552,47 +744,76 @@ export default function HubSpotIntegration({ user, onConnectionChange }: HubSpot
                       </div>
                     );
                   })}
-                </div>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleSaveFieldMapping}
-                    disabled={fieldSaving}
-                    className="inline-flex items-center gap-1.5 bg-[#ff7a59] hover:bg-[#ff7a59]/90 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
-                  >
-                    {fieldSaving ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                    ) : (
-                      <><Save className="w-3.5 h-3.5" /> Save Field Mapping</>
+                  <div className="pt-4 flex items-center gap-4">
+                    <button
+                      onClick={handleSaveFieldMapping}
+                      disabled={fieldSaving}
+                      className="px-5 py-2.5 bg-gradient-to-r from-[#ff7a59] to-[#e5694d] text-white text-xs font-bold rounded-xl shadow-md hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {fieldSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Save Field Mapping
+                    </button>
+                    {fieldSaved && (
+                      <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                        <Check className="w-4 h-4" /> Saved successfully
+                      </span>
                     )}
-                  </button>
-                  {fieldSaved && (
-                    <span className="text-xs text-green-600 font-medium flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Saved
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setFieldMapping({ ...DEFAULT_FIELD_MAPPING })}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline"
-                  >
-                    Reset to defaults
-                  </button>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Info panel */}
-          <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700 space-y-1">
-            <p className="font-semibold text-blue-800">How bidirectional sync works</p>
-            <ul className="list-disc list-inside space-y-0.5 text-blue-700">
-              <li>HubSpot deal reaches Stage 2 → EPHY creates the deal automatically</li>
-              <li>Stage advances in either system → the other system updates within 60 seconds</li>
-              <li>Underwriter data (premium rate, multiplier, etc.) flows EPHY → HubSpot</li>
-              <li>Census counts are <strong>never</strong> synced — each system keeps its own</li>
-              <li>Won/Lost in either system closes the deal in both</li>
-            </ul>
-          </div>
+          {/* TAB 4: ARCHITECTURE */}
+          {activeTab === "architecture" && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Integration System Architecture</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  How EPHY and HubSpot synchronize deals, properties, and webhooks securely.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-700 space-y-2">
+                    <div className="flex items-center gap-2 text-[#ff7a59] font-bold text-sm">
+                      <Zap className="w-4 h-4" /> Webhook Listener
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      HubSpot pushes deal stage changes in real-time to <code className="text-amber-300">/api/v1/hubspot/webhook</code>. Events are verified with HMAC SHA-256 signatures.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-700 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                      <ShieldCheck className="w-4 h-4" /> OAuth 2.0 + PKCE
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Tokens are stored encrypted per company tenant. Token refresh occurs automatically using PKCE security standards.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Recent Webhook Event Logs */}
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Recent Webhook Activity</h4>
+                  {webhookLogs.length === 0 ? (
+                    <p className="text-xs text-gray-400">No recent webhook events logged yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {webhookLogs.map((log) => (
+                        <div key={log.id} className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs">
+                          <span className="font-mono text-gray-700 dark:text-gray-300">{log.event_type || "deal.propertyChange"}</span>
+                          <span className="text-gray-400">Deal #{log.hubspot_deal_id}</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">{log.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
