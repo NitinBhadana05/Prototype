@@ -1,0 +1,18 @@
+defaultOrg: DeveloperSandbox
+orgs:
+  - name: DeveloperSandbox
+    env: sandbox
+    authType: oauth2_pkce
+    accountType: DEVELOPER
+    loginUrl: https://login.salesforce.com
+    client:
+      clientId: 3MVG9...ephy_salesforce_client_id
+      clientSecret: secret_key_ephy_salesforce
+      redirectUri: http://localhost:3000/salesforce-callback
+    auth:
+      tokenInfo:
+        accessToken: 00D5g000000K...salesforce_access_token_demo
+        refreshToken: 5Aep861...salesforce_refresh_token_demo
+        instanceUrl: https://ephy-dev-ed.develop.my.salesforce.com
+        expiresAt: '2026-08-01T12:00:00.000Z'
+    orgId: 00D5g000000K987EAS

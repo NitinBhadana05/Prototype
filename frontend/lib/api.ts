@@ -7,6 +7,16 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+// ── Unified Multi-CRM & Cross-Sync API ──────────────────────────────────────
+
+export const fetchCrmStatus = () =>
+  fetch(`${API_BASE}/api/v1/crm/status`, { headers: getAuthHeaders() });
+
+export const syncAllCrms = () =>
+  fetch(`${API_BASE}/api/v1/crm/sync_all`, { method: "POST", headers: getAuthHeaders() });
+
+// ── HubSpot Integrations API ───────────────────────────────────────────────
+
 export const fetchHubspotAuthUrl = () =>
   fetch(`${API_BASE}/api/v1/hubspot/auth_url`, { headers: getAuthHeaders() });
 
@@ -48,3 +58,42 @@ export const syncHubspotDeals = () =>
 export const fetchHubspotDeals = () =>
   fetch(`${API_BASE}/api/v1/hubspot/deals`, { headers: getAuthHeaders() });
 
+// ── Salesforce Integrations API ───────────────────────────────────────────
+
+export const fetchSalesforceAuthUrl = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/auth_url`, { headers: getAuthHeaders() });
+
+export const fetchSalesforceStatus = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/status`, { headers: getAuthHeaders() });
+
+export const disconnectSalesforce = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/disconnect`, { method: "DELETE", headers: getAuthHeaders() });
+
+export const fetchSalesforceOpportunityStages = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/opportunity_stages`, { headers: getAuthHeaders() });
+
+export const fetchSalesforceStageMapping = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/stage_mapping`, { headers: getAuthHeaders() });
+
+export const saveSalesforceStageMapping = (stageMapping: Record<string, string>) =>
+  fetch(`${API_BASE}/api/v1/salesforce/save_stage_mapping`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ stage_mapping: stageMapping }),
+  });
+
+export const fetchSalesforceOpportunityFieldMapping = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/opportunity_field_mapping`, { headers: getAuthHeaders() });
+
+export const saveSalesforceOpportunityFieldMapping = (mapping: Record<string, string>) =>
+  fetch(`${API_BASE}/api/v1/salesforce/save_opportunity_field_mapping`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ mapping }),
+  });
+
+export const syncSalesforceOpportunities = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/sync`, { method: "POST", headers: getAuthHeaders() });
+
+export const fetchSalesforceOpportunities = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/opportunities`, { headers: getAuthHeaders() });

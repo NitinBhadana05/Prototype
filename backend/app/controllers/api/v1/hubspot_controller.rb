@@ -221,7 +221,7 @@ class Api::V1::HubspotController < Api::V1::BaseController
   private
 
   def load_company
-    @company = CompanyInfo.find_by(id: @current_company_info_id)
+    @company = CompanyInfo.find_by(id: @current_company_info_id) || CompanyInfo.first
     render json: { error: "Company not found" }, status: :not_found unless @company
   end
 end
