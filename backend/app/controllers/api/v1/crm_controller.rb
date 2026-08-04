@@ -63,6 +63,25 @@ class Api::V1::CrmController < Api::V1::BaseController
     }
   end
 
+  # POST /api/v1/crm/reconcile
+  def reconcile
+    dual_files = SalesFile.where(company_info_id: @company.id)
+                          .where.not(hubspot_deal_id: nil)
+                          .where.not(salesforce_opportunity_id: nil)
+
+    reconciled = 0
+    dual_files.each do |file|
+      file.touch # triggers after_commit sync to both CRMs
+      reconciled += 1
+    end
+
+    render json: {
+      status: 200,
+      message: "Cross-CRM reconciliation triggered for #{reconciled} dual-synced entities.",
+      reconciled_count: reconciled
+    }
+  end
+
   private
 
   def load_company

@@ -15,6 +15,9 @@ export const fetchCrmStatus = () =>
 export const syncAllCrms = () =>
   fetch(`${API_BASE}/api/v1/crm/sync_all`, { method: "POST", headers: getAuthHeaders() });
 
+export const reconcileCrmDiscrepancies = () =>
+  fetch(`${API_BASE}/api/v1/crm/reconcile`, { method: "POST", headers: getAuthHeaders() });
+
 // ── HubSpot Integrations API ───────────────────────────────────────────────
 
 export const fetchHubspotAuthUrl = () =>
@@ -65,6 +68,12 @@ export const fetchSalesforceAuthUrl = () =>
 
 export const fetchSalesforceStatus = () =>
   fetch(`${API_BASE}/api/v1/salesforce/status`, { headers: getAuthHeaders() });
+
+export const fetchSalesforceHealth = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/health`, { headers: getAuthHeaders() });
+
+export const reconcileSalesforceOpportunities = () =>
+  fetch(`${API_BASE}/api/v1/salesforce/reconcile`, { method: "POST", headers: getAuthHeaders() });
 
 export const disconnectSalesforce = () =>
   fetch(`${API_BASE}/api/v1/salesforce/disconnect`, { method: "DELETE", headers: getAuthHeaders() });

@@ -204,9 +204,64 @@ class SalesforceService
     Rack::Utils.secure_compare(computed, signature.to_s.downcase)
   end
 
+  def health_check
+    ensure_fresh_token!
+    start_time = Time.now
+    path = "/services/data/#{API_VERSION}/limits"
+    res  = api_request(:get, path)
+    latency_ms = ((Time.now - start_time) * 1000).round
+
+    if res.is_a?(Hash) && res["DailyApiRequests"].is_a?(Hash)
+      daily_limits = res["DailyApiRequests"]
+      {
+        status: "healthy",
+        latency_ms: latency_ms,
+        api_usage: daily_limits["Remaining"],
+        api_limit: daily_limits["Max"],
+        usage_percent: (((daily_limits["Max"] - daily_limits["Remaining"]).to_f / daily_limits["Max"]) * 100).round(2),
+        token_expires_at: company_info.sf_token_expires_at
+      }
+    else
+      { status: "unhealthy", latency_ms: latency_ms, error: res }
+    end
+  rescue => e
+    { status: "error", message: e.message }
+  end
+
+  def reconcile_opportunity(sf_id, local_sales_file)
+    ensure_fresh_token!
+    sf_opp = get_opportunity(sf_id)
+    return { status: "not_found" } unless sf_opp.is_a?(Hash) && sf_opp["Id"].present?
+
+    field_mapping = company_info.sf_opportunity_field_mapping.presence || DEFAULT_FIELD_MAPPING
+    stage_mapping = company_info.sf_stage_mapping || {}
+
+    # Check for discrepancies
+    discrepancies = {}
+    
+    sf_stage = sf_opp["StageName"]
+    expected_local_stage = stage_mapping.key(sf_stage) || sf_stage.downcase
+    if local_sales_file.deal_stage != expected_local_stage
+      discrepancies["deal_stage"] = { local: local_sales_file.deal_stage, sf: sf_stage }
+    end
+
+    sf_amount = sf_opp["Amount"].to_f
+    if local_sales_file.deal_size.to_f != sf_amount
+      discrepancies["deal_size"] = { local: local_sales_file.deal_size, sf: sf_amount }
+    end
+
+    {
+      salesforce_opportunity_id: sf_id,
+      local_sales_file_id: local_sales_file.id,
+      in_sync: discrepancies.empty?,
+      discrepancies: discrepancies,
+      sf_last_modified: sf_opp["LastModifiedDate"]
+    }
+  end
+
   private
 
-  def api_request(method, path_or_url, payload: nil)
+  def api_request(method, path_or_url, payload: nil, max_retries: 3)
     base_url     = company_info.sf_instance_url.presence || "https://login.salesforce.com"
     full_uri     = path_or_url.start_with?("http") ? URI(path_or_url) : URI("#{base_url}#{path_or_url}")
     
@@ -217,20 +272,40 @@ class SalesforceService
                    when :delete then Net::HTTP::Delete
                    end
 
-    req          = req_class.new(full_uri)
-    req["Authorization"] = "Bearer #{company_info.sf_access_token}"
-    req["Content-Type"]  = "application/json"
-    req.body             = payload.to_json if payload.present?
+    retries = 0
+    loop do
+      begin
+        req          = req_class.new(full_uri)
+        req["Authorization"] = "Bearer #{company_info.sf_access_token}"
+        req["Content-Type"]  = "application/json"
+        req.body             = payload.to_json if payload.present?
 
-    http         = Net::HTTP.new(full_uri.host, full_uri.port)
-    http.use_ssl = (full_uri.scheme == "https")
+        http         = Net::HTTP.new(full_uri.host, full_uri.port)
+        http.use_ssl = (full_uri.scheme == "https")
 
-    res = http.request(req)
+        res = http.request(req)
 
-    if res.code.to_i == 204
-      return { "success" => true }
+        if res.code.to_i == 429 && retries < max_retries
+          retries += 1
+          sleep_time = (2 ** retries) * 0.5
+          Rails.logger.warn("[SalesforceService] Rate limit hit (429). Retrying in #{sleep_time}s...")
+          sleep(sleep_time)
+          next
+        end
+
+        if res.code.to_i == 204
+          return { "success" => true }
+        end
+
+        return JSON.parse(res.body) rescue { "code" => res.code, "body" => res.body }
+      rescue SocketError, Timeout::Error => e
+        if retries < max_retries
+          retries += 1
+          sleep(1.0)
+          next
+        end
+        return { "error" => "connection_failed", "message" => e.message }
+      end
     end
-
-    JSON.parse(res.body) rescue { "code" => res.code, "body" => res.body }
   end
 end

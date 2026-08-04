@@ -177,6 +177,41 @@ class Api::V1::SalesforceController < Api::V1::BaseController
     render json: { status: 200, message: "Salesforce Sync started" }
   end
 
+  # GET /api/v1/salesforce/health
+  def health
+    unless @company.salesforce_connected?
+      return render json: { status: "disconnected", connected: false }, status: :ok
+    end
+
+    service = SalesforceService.new(@company)
+    health  = service.health_check
+    render json: { status: 200, health: health }
+  rescue => e
+    Rails.logger.error("[Salesforce#health] #{e.class}: #{e.message}")
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  # POST /api/v1/salesforce/reconcile
+  def reconcile
+    unless @company.salesforce_connected?
+      return render json: { error: "Salesforce not connected" }, status: :unprocessable_entity
+    end
+
+    service     = SalesforceService.new(@company)
+    sales_files = SalesFile.where(company_info_id: @company.id).where.not(salesforce_opportunity_id: nil)
+
+    results = sales_files.map do |sf|
+      service.reconcile_opportunity(sf.salesforce_opportunity_id, sf)
+    end
+
+    render json: {
+      status: 200,
+      total_checked: sales_files.count,
+      in_sync_count: results.count { |r| r[:in_sync] },
+      reconciliations: results
+    }
+  end
+
   # GET /api/v1/salesforce/opportunities
   def opportunities
     opps = SalesforceOpportunity.where(company_info_id: @company.id).order(updated_at: :desc).limit(50)

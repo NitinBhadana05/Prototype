@@ -33,6 +33,8 @@ Rails.application.routes.draw do
       resource :salesforce, only: [], controller: 'salesforce' do
         get    :auth_url
         get    :status
+        get    :health
+        post   :reconcile
         delete :disconnect
         get    :opportunity_stages
         get    :stage_mapping
