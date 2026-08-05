@@ -1,0 +1,18 @@
+defaultAccount: PrimaryGmail
+accounts:
+  - name: PrimaryGmail
+    env: sandbox
+    authType: oauth2_pkce
+    accountType: PERSONAL_WORKSPACE
+    loginUrl: https://accounts.google.com
+    client:
+      clientId: google_gmail_client_id_demo.apps.googleusercontent.com
+      clientSecret: secret_key_google_gmail_demo
+      redirectUri: http://localhost:3000/gmail-callback
+    auth:
+      tokenInfo:
+        accessToken: ya29.a0...gmail_access_token_demo
+        refreshToken: 1//04...gmail_refresh_token_demo
+        email: demo.user@example.com
+        expiresAt: '2026-08-05T18:00:00.000Z'
+    accountId: 10982347891234
