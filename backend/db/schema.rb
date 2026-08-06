@@ -10,13 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 11) do
+ActiveRecord::Schema[8.1].define(version: 15) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "company_infos", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.boolean "enable_sales_deal", default: false
+    t.string "gmail_access_token"
+    t.string "gmail_account_id"
+    t.string "gmail_email"
+    t.jsonb "gmail_field_mapping", default: {}
+    t.jsonb "gmail_label_mapping", default: {}
+    t.string "gmail_refresh_token"
+    t.datetime "gmail_token_expires_at"
+    t.string "gmail_webhook_secret"
     t.string "hs_access_token"
     t.jsonb "hs_deal_field_mapping", default: {}
     t.string "hs_hub_id"
@@ -35,6 +43,52 @@ ActiveRecord::Schema[8.1].define(version: 11) do
     t.datetime "sf_token_expires_at"
     t.string "sf_webhook_secret"
     t.datetime "updated_at", null: false
+  end
+
+  create_table "gmail_messages", force: :cascade do |t|
+    t.bigint "company_info_id", null: false
+    t.datetime "created_at", null: false
+    t.string "gmail_message_id", null: false
+    t.datetime "last_synced_at"
+    t.jsonb "message_data", default: {}
+    t.string "payload_hash"
+    t.bigint "sales_file_id"
+    t.string "status", default: "pending"
+    t.string "thread_id"
+    t.datetime "updated_at", null: false
+    t.index ["company_info_id", "gmail_message_id"], name: "idx_gmail_messages_on_company_and_msg_id", unique: true
+    t.index ["company_info_id"], name: "index_gmail_messages_on_company_info_id"
+    t.index ["sales_file_id"], name: "index_gmail_messages_on_sales_file_id"
+    t.index ["status"], name: "index_gmail_messages_on_status"
+  end
+
+  create_table "gmail_webhook_logs", force: :cascade do |t|
+    t.bigint "company_info_id"
+    t.string "content_type"
+    t.datetime "created_at", null: false
+    t.string "email_account"
+    t.string "error_class"
+    t.text "error_message"
+    t.string "event_type"
+    t.string "gmail_message_id"
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "processed_at"
+    t.string "remote_ip"
+    t.string "request_id"
+    t.string "request_method"
+    t.text "request_path"
+    t.integer "response_status"
+    t.boolean "signature_valid", default: false, null: false
+    t.string "status", default: "received", null: false
+    t.datetime "updated_at", null: false
+    t.text "user_agent"
+    t.string "worker_jid"
+    t.index ["company_info_id", "created_at"], name: "index_gmail_webhook_logs_on_company_info_id_and_created_at"
+    t.index ["company_info_id"], name: "index_gmail_webhook_logs_on_company_info_id"
+    t.index ["email_account"], name: "index_gmail_webhook_logs_on_email_account"
+    t.index ["gmail_message_id"], name: "index_gmail_webhook_logs_on_gmail_message_id"
+    t.index ["request_id"], name: "index_gmail_webhook_logs_on_request_id"
+    t.index ["status"], name: "index_gmail_webhook_logs_on_status"
   end
 
   create_table "hubspot_deals", force: :cascade do |t|
@@ -100,6 +154,9 @@ ActiveRecord::Schema[8.1].define(version: 11) do
     t.date "deal_closed_date"
     t.float "deal_size"
     t.string "deal_stage"
+    t.string "gmail_message_id"
+    t.string "gmail_thread_id"
+    t.datetime "gmail_written_at"
     t.datetime "hs_written_at"
     t.string "hubspot_deal_id"
     t.string "hubspot_deal_url"
@@ -109,6 +166,7 @@ ActiveRecord::Schema[8.1].define(version: 11) do
     t.string "salesforce_opportunity_url"
     t.datetime "sf_written_at"
     t.datetime "updated_at", null: false
+    t.index ["company_info_id", "gmail_message_id"], name: "idx_sales_files_on_company_and_gmail_msg_id", unique: true, where: "(gmail_message_id IS NOT NULL)"
     t.index ["company_info_id", "hubspot_deal_id"], name: "idx_sales_files_on_company_and_hubspot_deal_id", unique: true, where: "(hubspot_deal_id IS NOT NULL)"
     t.index ["company_info_id", "salesforce_opportunity_id"], name: "idx_sales_files_on_company_and_sf_opp_id", unique: true, where: "(salesforce_opportunity_id IS NOT NULL)"
     t.index ["company_info_id"], name: "index_sales_files_on_company_info_id"
@@ -174,6 +232,9 @@ ActiveRecord::Schema[8.1].define(version: 11) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  add_foreign_key "gmail_messages", "company_infos"
+  add_foreign_key "gmail_messages", "sales_files"
+  add_foreign_key "gmail_webhook_logs", "company_infos"
   add_foreign_key "hubspot_deals", "company_infos"
   add_foreign_key "hubspot_deals", "sales_files"
   add_foreign_key "hubspot_webhook_logs", "company_infos"
