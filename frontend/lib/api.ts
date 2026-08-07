@@ -106,3 +106,50 @@ export const syncSalesforceOpportunities = () =>
 
 export const fetchSalesforceOpportunities = () =>
   fetch(`${API_BASE}/api/v1/salesforce/opportunities`, { headers: getAuthHeaders() });
+
+// ── Gmail Integrations API ────────────────────────────────────────────────
+
+export const fetchGmailAuthUrl = () =>
+  fetch(`${API_BASE}/api/v1/gmail/auth_url`, { headers: getAuthHeaders() });
+
+export const fetchGmailStatus = () =>
+  fetch(`${API_BASE}/api/v1/gmail/status`, { headers: getAuthHeaders() });
+
+export const fetchGmailHealth = () =>
+  fetch(`${API_BASE}/api/v1/gmail/health`, { headers: getAuthHeaders() });
+
+export const reconcileGmailMessages = () =>
+  fetch(`${API_BASE}/api/v1/gmail/reconcile`, { method: "POST", headers: getAuthHeaders() });
+
+export const disconnectGmail = () =>
+  fetch(`${API_BASE}/api/v1/gmail/disconnect`, { method: "DELETE", headers: getAuthHeaders() });
+
+export const fetchGmailLabels = () =>
+  fetch(`${API_BASE}/api/v1/gmail/labels`, { headers: getAuthHeaders() });
+
+export const fetchGmailLabelMapping = () =>
+  fetch(`${API_BASE}/api/v1/gmail/label_mapping`, { headers: getAuthHeaders() });
+
+export const saveGmailLabelMapping = (labelMapping: Record<string, string>) =>
+  fetch(`${API_BASE}/api/v1/gmail/save_label_mapping`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ label_mapping: labelMapping }),
+  });
+
+export const fetchGmailMessageFieldMapping = () =>
+  fetch(`${API_BASE}/api/v1/gmail/message_field_mapping`, { headers: getAuthHeaders() });
+
+export const saveGmailMessageFieldMapping = (mapping: Record<string, string>) =>
+  fetch(`${API_BASE}/api/v1/gmail/save_message_field_mapping`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ mapping }),
+  });
+
+export const syncGmailMessages = () =>
+  fetch(`${API_BASE}/api/v1/gmail/sync`, { method: "POST", headers: getAuthHeaders() });
+
+export const fetchGmailMessages = () =>
+  fetch(`${API_BASE}/api/v1/gmail/messages`, { headers: getAuthHeaders() });
+

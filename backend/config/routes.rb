@@ -10,6 +10,10 @@ Rails.application.routes.draw do
   get  '/api/v1/salesforce/callback', to: 'api/v1/salesforce#callback'
   post '/api/v1/salesforce/webhook',  to: 'api/v1/salesforce_webhooks#opportunity_event'
 
+  # Gmail OAuth callback & webhook
+  get  '/api/v1/gmail/callback',      to: 'api/v1/gmail#callback'
+  post '/api/v1/gmail/webhook',       to: 'api/v1/gmail_webhooks#message_event'
+
   namespace :api do
     namespace :v1 do
       # Unified CRM Cross-Sync endpoints
@@ -44,6 +48,22 @@ Rails.application.routes.draw do
         patch  :save_opportunity_field_mapping
         post   :sync
         get    :opportunities
+      end
+
+      resource :gmail, only: [], controller: 'gmail' do
+        get    :auth_url
+        get    :status
+        get    :health
+        post   :reconcile
+        delete :disconnect
+        get    :labels
+        get    :label_mapping
+        patch  :save_label_mapping
+        get    :message_fields
+        get    :message_field_mapping
+        patch  :save_message_field_mapping
+        post   :sync
+        get    :messages
       end
 
       resources :salesforce_opportunities, only: [:index, :destroy] do

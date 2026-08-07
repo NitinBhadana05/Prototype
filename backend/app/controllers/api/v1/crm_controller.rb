@@ -3,11 +3,13 @@ class Api::V1::CrmController < Api::V1::BaseController
 
   # GET /api/v1/crm/status
   def status
-    hs_connected = @company.hubspot_connected?
-    sf_connected = @company.salesforce_connected?
+    hs_connected    = @company.hubspot_connected?
+    sf_connected    = @company.salesforce_connected?
+    gmail_connected = @company.gmail_connected?
 
-    hs_deals_count = HubspotDeal.where(company_info_id: @company.id).count
-    sf_opps_count  = SalesforceOpportunity.where(company_info_id: @company.id).count
+    hs_deals_count    = HubspotDeal.where(company_info_id: @company.id).count
+    sf_opps_count     = SalesforceOpportunity.where(company_info_id: @company.id).count
+    gmail_msgs_count  = GmailMessage.where(company_info_id: @company.id).count
     total_sales_files = SalesFile.where(company_info_id: @company.id).count
 
     # Deals linked to both CRMs simultaneously
@@ -29,11 +31,16 @@ class Api::V1::CrmController < Api::V1::BaseController
         instance_url: @company.sf_instance_url,
         opportunities_count: sf_opps_count
       },
+      gmail: {
+        connected: gmail_connected,
+        email:     @company.gmail_email,
+        messages_count: gmail_msgs_count
+      },
       cross_crm: {
-        active: hs_connected && sf_connected,
+        active: (hs_connected && sf_connected) || (gmail_connected && (hs_connected || sf_connected)),
         total_ephy_deals: total_sales_files,
         dual_synced_deals: dual_synced_count,
-        mode: "Bi-directional Cross-CRM Sync (HubSpot ↔ EPHY ↔ Salesforce)"
+        mode: "Multi-Platform Bi-directional Sync (HubSpot ↔ EPHY ↔ Salesforce ↔ Gmail)"
       }
     }
   end
@@ -52,13 +59,18 @@ class Api::V1::CrmController < Api::V1::BaseController
       enqueued << "Salesforce"
     end
 
+    if @company.gmail_connected?
+      GmailSyncWorker.perform_async(@company.id)
+      enqueued << "Gmail"
+    end
+
     if enqueued.empty?
-      return render json: { error: "Neither HubSpot nor Salesforce is connected" }, status: :unprocessable_entity
+      return render json: { error: "No integrations (HubSpot, Salesforce, or Gmail) are connected" }, status: :unprocessable_entity
     end
 
     render json: {
       status: 200,
-      message: "Unified sync started for #{enqueued.join(' and ')}",
+      message: "Unified sync started for #{enqueued.join(', ')}",
       synced_integrations: enqueued
     }
   end
